@@ -1,6 +1,7 @@
 import json
 import psycopg2
 import paho.mqtt.client as mqtt
+from psycopg2 import sql, errors
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -22,8 +23,27 @@ def on_message(client, userdata, msg, properties=None):
                 (json_login_info["username"], json_login_info["password"])
             )
             print(f"Inserted user: {json_login_info['username']}")
+        except psycopg2.IntegrityError as e:
+            if "unique constraint" in str(e):
+                # print("Username already exists. Please choose another username.")
+                returning_data = {
+                    "identity": json_login_info["identity"],
+                    "user_taken": "True"
+                }
+
+                client.publish("application/login", json.dumps(returning_data))
+                print("Data Returned")
+
         except Exception as e:
             print("An error occurred while inserting data:", e)
+
+        else:
+            returning_data = {
+                "identity": json_login_info["identity"],
+                "user_taken": "False"
+            }
+
+            client.publish("application/login", json.dumps(returning_data))
 
     if msg.topic == "server/create":
         data = json.loads(msg.payload.decode("utf-8"))
@@ -41,8 +61,8 @@ def on_message(client, userdata, msg, properties=None):
 
         data_for_recipient = {
             "username": recipient_username,
-            "recipient" : username,
-            "topic" : topic
+            "recipient": username,
+            "topic": topic
         }
 
         client.publish("application/create", json.dumps(data_for_creator))
@@ -61,23 +81,19 @@ def on_message_for_create_chatroom(client, userdata, msg):
 
 
 def execute_in_database(query, params=None):
-    try:
-        conn = psycopg2.connect(
-            dbname="healthsync",
-            user="postgres",
-            password="12345",
-            host="localhost",
-            port="5432"
-        )
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        conn.commit()
-    except Exception as e:
-        print("An error occurred while executing query:", e)
-        conn.rollback()
-    finally:
-        cursor.close()
-        conn.close()
+    conn = psycopg2.connect(
+        dbname="healthsync",
+        user="postgres",
+        password="12345",
+        host="localhost",
+        port="5432"
+    )
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    conn.commit()
+    conn.rollback()
+    cursor.close()
+    conn.close()
 
 
 broker = "4dbbebee01cb4916af953cf932ac5313.s1.eu.hivemq.cloud"
