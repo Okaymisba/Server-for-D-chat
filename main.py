@@ -12,7 +12,6 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_message(client, userdata, msg, properties=None):
     print("Received a message on topic ", msg.topic)
 
-    # creates an entry to the database with username and password
     if msg.topic == "server/login":
         json_login_info = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message: {json_login_info}")
@@ -22,17 +21,14 @@ def on_message(client, userdata, msg, properties=None):
                 "INSERT INTO user_data (username, password) VALUES (%s, %s);",
                 (json_login_info["username"], json_login_info["password"])
             )
-            print(f"Inserted user: {json_login_info['username']}")
         except psycopg2.IntegrityError as e:
             if "unique constraint" in str(e):
-                # print("Username already exists. Please choose another username.")
                 returning_data = {
                     "identity": json_login_info["identity"],
                     "user_taken": "True"
                 }
 
                 client.publish("application/login", json.dumps(returning_data))
-                print("Data Returned")
 
         except Exception as e:
             print("An error occurred while inserting data:", e)
@@ -53,20 +49,46 @@ def on_message(client, userdata, msg, properties=None):
         chatroom_code = data["code"]
         topic = f"application/chatrooms/{chatroom_code}"
 
-        data_for_creator = {
-            "username": username,
-            "recipient": recipient_username,
-            "topic": topic
-        }
+        try:
+            execute_in_database(
+                "INSERT INTO chatroom_data (chatroom_code) VALUES (%s);",
+                (chatroom_code,)
+            )
+        except psycopg2.IntegrityError as e:
+            if "unique constraint" in str(e):
+                data_for_creator = {
+                    "username": username,
+                    "recipient": recipient_username,
+                    "topic": topic,
+                    "code_available": "False"
+                }
 
-        data_for_recipient = {
-            "username": recipient_username,
-            "recipient": username,
-            "topic": topic
-        }
+                data_for_recipient = {
+                    "username": recipient_username,
+                    "recipient": username,
+                    "topic": topic,
+                    "code_available": "False"
+                }
 
-        client.publish("application/create", json.dumps(data_for_creator))
-        client.publish("application/create", json.dumps(data_for_recipient))
+                client.publish("application/create", json.dumps(data_for_creator))
+                client.publish("application/create", json.dumps(data_for_recipient))
+        else:
+            data_for_creator = {
+                "username": username,
+                "recipient": recipient_username,
+                "topic": topic,
+                "code_available": "True"
+            }
+
+            data_for_recipient = {
+                "username": recipient_username,
+                "recipient": username,
+                "topic": topic,
+                "code_available": "True"
+            }
+
+            client.publish("application/create", json.dumps(data_for_creator))
+            client.publish("application/create", json.dumps(data_for_recipient))
 
 
 def on_connect_for_create_chatroom(client, userdata, flags, rc, properties=None):
