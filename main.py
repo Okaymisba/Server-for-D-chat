@@ -2,7 +2,7 @@ import json
 import psycopg2
 import paho.mqtt.client as mqtt
 
-from Functions import username_exists
+from Functions import username_exists, hash_password, authenticate_user
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -13,14 +13,14 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_message(client, userdata, msg, properties=None):
     print("Received a message on topic ", msg.topic)
 
-    if msg.topic == "server/login":
+    if msg.topic == "server/signup":
         json_login_info = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message: {json_login_info}")
 
         try:
             execute_in_database(
                 "INSERT INTO user_data (username, password) VALUES (%s, %s);",
-                (json_login_info["username"], json_login_info["password"])
+                (json_login_info["username"].lower(), hash_password(json_login_info["password"]))
             )
         except psycopg2.IntegrityError as e:
             if "unique constraint" in str(e):
@@ -29,7 +29,7 @@ def on_message(client, userdata, msg, properties=None):
                     "user_taken": "True"
                 }
 
-                client.publish("application/login", json.dumps(returning_data))
+                client.publish("application/signup", json.dumps(returning_data))
 
         except Exception as e:
             print("An error occurred while inserting data:", e)
@@ -40,13 +40,25 @@ def on_message(client, userdata, msg, properties=None):
                 "user_taken": "False"
             }
 
-            client.publish("application/login", json.dumps(returning_data))
+            client.publish("application/signup", json.dumps(returning_data))
+
+    if msg.topic == "server/login":
+        json_login_info = json.loads(msg.payload.decode("utf-8"))
+        print(f"Received message: {json_login_info}")
+
+        success = authenticate_user(json_login_info["username"].lower(), json_login_info["password"])
+        data_to_return = {
+            "identity": json_login_info["identity"],
+            "success": success
+        }
+
+        client.publish("application/login", json.dumps(data_to_return))
 
     if msg.topic == "server/create":
         data = json.loads(msg.payload.decode("utf-8"))
         print(f"Received message: {data}")
-        username = data["username"]
-        recipient_username = data["recipient"]
+        username = data["username"].lower()
+        recipient_username = data["recipient"].lower()
         chatroom_code = data["code"]
         topic = f"application/chatrooms/{chatroom_code}"
 
