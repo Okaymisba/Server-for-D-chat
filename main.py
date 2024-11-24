@@ -1,7 +1,8 @@
 import json
 import psycopg2
 import paho.mqtt.client as mqtt
-from psycopg2 import sql, errors
+
+from Functions import username_exists
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -54,6 +55,7 @@ def on_message(client, userdata, msg, properties=None):
                 "INSERT INTO chatroom_data (chatroom_code) VALUES (%s);",
                 (chatroom_code,)
             )
+            recipient_available = username_exists(recipient_username)
         except psycopg2.IntegrityError as e:
             if "unique constraint" in str(e):
                 data_for_creator = {
@@ -77,14 +79,16 @@ def on_message(client, userdata, msg, properties=None):
                 "username": username,
                 "recipient": recipient_username,
                 "topic": topic,
-                "code_available": "True"
+                "code_available": "True",
+                "recipient_available": recipient_available
             }
 
             data_for_recipient = {
                 "username": recipient_username,
                 "recipient": username,
                 "topic": topic,
-                "code_available": "True"
+                "code_available": "True",
+                "recipient_available": recipient_available
             }
 
             client.publish("application/create", json.dumps(data_for_creator))
